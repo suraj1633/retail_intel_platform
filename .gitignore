@@ -1,0 +1,19 @@
+# Environment & Secrets
+.env
+*.pem
+*.key
+
+# Database
+*.sqlite
+*.db
+
+# Python artifacts
+__pycache__/
+*.pyc
+venv/
+.pytest_cache/
+
+# User outputs
+exports/
+*.xlsx
+*.csv

@@ -6,7 +6,7 @@ SQLAlchemy schema models and database connection management.
 import datetime
 import os
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # SQLite database file configuration
@@ -19,6 +19,7 @@ Base = declarative_base()
 
 class ProductListing(Base):
     __tablename__ = "product_listings"
+    __table_args__ = (UniqueConstraint('url', name='uq_product_url'),)
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
@@ -29,15 +30,17 @@ class ProductListing(Base):
     oem = Column(String, index=True, nullable=True)
     product_type = Column(String, default="Notebook")
     platform = Column(String, index=True)
-    url = Column(String)
+    url = Column(String, unique=True, nullable=True)
     rank = Column(Integer, default=1)
     has_listing_badge = Column(Boolean, default=False)
     has_pdp_badge = Column(Boolean, default=False)
     has_spec_table_mention = Column(Boolean, default=False)
     has_brand_rich_media = Column(Boolean, default=False)
     has_oem_rich_media = Column(Boolean, default=False)
+    detected_badges = Column(String, nullable=True)
     source = Column(String, default="SCRAPED")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 
 class AuditRecord(Base):

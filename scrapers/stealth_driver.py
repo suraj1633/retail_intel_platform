@@ -1,16 +1,30 @@
-from curl_cffi import requests
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    # Fallback to standard requests if curl_cffi is not available
+    import requests as cffi_requests
+    HAS_CURL_CFFI = False
+
 from playwright.async_api import async_playwright
 import asyncio
 
 class StealthFetcher:
-    """Fast HTTP fetcher using browser impersonation (TLS/JA4 fingerprinting)."""
+    """Fast HTTP fetcher using browser impersonation (TLS/JA4 fingerprinting) or standard requests."""
     def __init__(self):
-        self.session = requests.Session(impersonate="chrome120")
+        if HAS_CURL_CFFI:
+            self.session = cffi_requests.Session(impersonate="chrome120")
+        else:
+            self.session = cffi_requests.Session()
+            # Add anti-detection headers for standard requests
+            self.session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            })
 
     def get(self, url, headers=None, timeout=15):
         default_headers = {
             "Accept-Language": "en-US,en;q=0.9",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
         if headers:
             default_headers.update(headers)

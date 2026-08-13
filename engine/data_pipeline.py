@@ -116,6 +116,7 @@ def run_live_pipeline():
     ]
 
     total_products = 0
+    total_updates = 0
     for platform_name, scraper_inst, keyword in product_tasks:
         try:
             results = scraper_inst.scrape_keyword_results(keyword)
@@ -128,28 +129,79 @@ def run_live_pipeline():
                 }
                 if not is_valid_product_record(candidate):
                     continue
-                listing = ProductListing(
-                    title=res.get("title"),
-                    price=res.get("price", 0.0),
-                    msrp=res.get("msrp", res.get("price", 0.0)),
-                    is_promo=res.get("is_promo", False),
-                    brand=res.get("brand"),
-                    oem=res.get("oem"),
-                    product_type=res.get("product_type", "Notebook"),
-                    platform=platform_name,
-                    url=res.get("url"),
-                    rank=res.get("rank", 1),
-                    source="LIVE_SCRAPE",
-                    created_at=datetime.utcnow()
-                )
-                session.add(listing)
-                total_products += 1
-            session.commit()
+                
+                # UPSERT logic: Always check for existing product first
+                product_url = res.get("url")
+                existing_product = None
+                
+                if product_url:
+                    # Query by URL to find existing product
+                    try:
+                        existing_product = session.query(ProductListing).filter_by(url=product_url).first()
+                    except Exception:
+                        existing_product = None
+                
+                try:
+                    if existing_product:
+                        # UPDATE existing product
+                        existing_product.title = res.get("title")
+                        existing_product.price = res.get("price", 0.0)
+                        existing_product.msrp = res.get("msrp", res.get("price", 0.0))
+                        existing_product.is_promo = res.get("is_promo", False)
+                        existing_product.brand = res.get("brand")
+                        existing_product.oem = res.get("oem")
+                        existing_product.product_type = res.get("product_type", "Notebook")
+                        existing_product.rank = res.get("rank", 1)
+                        existing_product.detected_badges = res.get("detected_badges", "")
+                        session.commit()
+                        total_updates += 1
+                    else:
+                        # INSERT new product - commit immediately to catch UNIQUE errors early
+                        listing = ProductListing(
+                            title=res.get("title"),
+                            price=res.get("price", 0.0),
+                            msrp=res.get("msrp", res.get("price", 0.0)),
+                            is_promo=res.get("is_promo", False),
+                            brand=res.get("brand"),
+                            oem=res.get("oem"),
+                            product_type=res.get("product_type", "Notebook"),
+                            platform=platform_name,
+                            url=product_url,
+                            rank=res.get("rank", 1),
+                            detected_badges=res.get("detected_badges", ""),
+                            source="LIVE_SCRAPE",
+                            created_at=datetime.utcnow()
+                        )
+                        session.add(listing)
+                        session.commit()  # Commit immediately per-item to catch errors
+                        total_products += 1
+                except Exception as item_err:
+                    # If this item fails, skip it and continue with next item
+                    session.rollback()
+                    if "UNIQUE constraint" in str(item_err):
+                        # Try to update instead if UNIQUE constraint
+                        try:
+                            existing = session.query(ProductListing).filter_by(url=product_url).first()
+                            if existing:
+                                existing.title = res.get("title")
+                                existing.price = res.get("price", 0.0)
+                                existing.msrp = res.get("msrp", res.get("price", 0.0))
+                                existing.is_promo = res.get("is_promo", False)
+                                existing.brand = res.get("brand")
+                                existing.oem = res.get("oem")
+                                existing.product_type = res.get("product_type", "Notebook")
+                                existing.rank = res.get("rank", 1)
+                                existing.detected_badges = res.get("detected_badges", "")
+                                session.commit()
+                                total_updates += 1
+                        except:
+                            session.rollback()
+                            pass
         except Exception as e:
             session.rollback()
             print(f"[DataPipeline] Error scraping products for '{keyword}': {e}")
 
-    print(f"\n[DataPipeline] Stored {total_products} live product listings.")
+    print(f"\n[DataPipeline] Stored {total_products} live product listings (with {total_updates} updates).")
 
     print("\n==================================================")
     print("       2. EXECUTING LIVE BANNER SCRAPERS         ")
@@ -181,7 +233,7 @@ def run_live_pipeline():
             print(f"[DataPipeline] Error saving banners for {platform_name}: {e}")
 
     session.close()
-    print(f"\n[DataPipeline] Complete! Saved {total_products} products and {total_banners} banners to the database.")
+    print(f"\n[DataPipeline] Complete! Saved {total_products} new products, updated {total_updates} existing products, and {total_banners} banners to the database.")
 
 
 def seed_database(session=None):
